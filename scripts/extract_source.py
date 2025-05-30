@@ -4,7 +4,7 @@
 # @FileName : scripts/extract_source.py
 # @Author : convexwf@gmail.com
 # @CreateDate : 2025-05-29 11:04
-# @UpdateTime : 2025-05-29 11:04
+# @UpdateTime : 2025-05-30 11:18
 
 import re
 import json
@@ -238,6 +238,19 @@ def extract_with_adapter(adapter, html, input_path=None):
                 return s[len(rs) :].lstrip()
         return s
 
+    def text_excluding_tables(node):
+        """Return text of node excluding any descendant <table> contents."""
+        try:
+            inner = node.html() or ""
+            tmp = pq("<div>%s</div>" % inner)
+            tmp.find("table").remove()
+            return tmp.text().strip()
+        except Exception:
+            try:
+                return node.text().strip()
+            except Exception:
+                return ""
+
     sections = []
     # walk in document order under root
     for node in root.find("*").items():
@@ -260,6 +273,7 @@ def extract_with_adapter(adapter, html, input_path=None):
                 if node.is_(sel_rel):
                     btype = blk.get("type")
                     attrs = blk.get("attrs") or {}
+                    tag = getattr(node[0], "tag", "")
                     if btype == "heading":
                         sections.append(
                             {
@@ -268,11 +282,37 @@ def extract_with_adapter(adapter, html, input_path=None):
                                 "text": node.text().strip(),
                             }
                         )
-                    elif btype == "paragraph":
-                        text = node.text().strip()
+                    # handle tables specially
+                    elif btype == "table" or (
+                        isinstance(tag, str) and tag.lower() == "table"
+                    ):
+                        # parse rows and headers
+                        rows = []
+                        header = []
+                        for tr in node.find("tr").items():
+                            cells = []
+                            ths = tr.find("th")
+                            if len(ths) > 0 and not header:
+                                for th in ths.items():
+                                    header.append(th.text().strip())
+                            tds = tr.find("td")
+                            if len(tds) > 0:
+                                for td in tds.items():
+                                    cells.append(td.text().strip())
+                            # if there are no td but there are ths (header-only row), skip adding to rows
+                            if cells:
+                                rows.append(cells)
+                        sections.append(
+                            {"type": "table", "header": header, "rows": rows}
+                        )
+                    elif btype == "paragraph" or btype == "text":
+                        # exclude text from descendant tables to avoid duplicate content
+                        text = text_excluding_tables(node)
                         if text and not looks_like_css(text):
-                            sections.append({"type": "paragraph", "text": text})
-                    elif btype in ("figure", "image"):
+                            sections.append({"type": "text", "text": text})
+                    elif btype in ("figure", "image") or (
+                        isinstance(tag, str) and tag.lower() == "img"
+                    ):
                         item = {"type": "image"}
                         # gather attrs; if src is data: URI, save to file
                         for outk, in_attr in attrs.items():
@@ -300,15 +340,12 @@ def extract_with_adapter(adapter, html, input_path=None):
                             {"type": "link", "href": href or "", "text": text}
                         )
                     else:
-                        sections.append({"type": btype, "text": node.text().strip()})
+                        # default to text for unknown simple blocks (exclude table text)
+                        txt = text_excluding_tables(node)
+                        sections.append({"type": "text", "text": txt})
                     break
             except Exception:
                 continue
-
-    headings = [s for s in sections if s.get("type") == "heading"]
-    paragraphs = [s for s in sections if s.get("type") == "paragraph"]
-    images = [s for s in sections if s.get("type") == "image"]
-    links = [s for s in sections if s.get("type") == "link"]
 
     # enrich some meta defaults
     if "author" not in meta or not meta.get("author"):
@@ -326,14 +363,7 @@ def extract_with_adapter(adapter, html, input_path=None):
     if "image" not in meta or not meta.get("image"):
         meta["image"] = d("meta[property='og:image']").attr("content") or None
 
-    return {
-        "meta": meta,
-        "sections": sections,
-        "headings": headings,
-        "paragraphs": paragraphs,
-        "images": images,
-        "links": links,
-    }
+    return {"meta": meta, "sections": sections}
 
 
 def main(argv=None):
