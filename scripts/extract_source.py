@@ -4,7 +4,7 @@
 # @FileName : scripts/extract_source.py
 # @Author : convexwf@gmail.com
 # @CreateDate : 2025-05-29 11:04
-# @UpdateTime : 2025-05-30 11:18
+# @UpdateTime : 2025-06-03 11:33
 
 import re
 import json
@@ -229,13 +229,19 @@ def extract_with_adapter(adapter, html, input_path=None):
             s = s[len("css:") :].strip()
         if root_selector:
             rs = root_selector.strip()
-            if rs and s.startswith(rs):
-                return s[len(rs) :].lstrip()
-            # also handle cases like "#id > p" or "#id p"
-            if rs and s.startswith(rs + " "):
-                return s[len(rs) :].lstrip()
-            if rs and s.startswith(rs + ">"):
-                return s[len(rs) :].lstrip()
+            # split comma-separated selectors and strip root prefix from each part
+            parts = [p.strip() for p in re.split(r"\s*,\s*", s) if p.strip()]
+            out_parts = []
+            for p in parts:
+                pp = p
+                if rs and pp.startswith(rs):
+                    pp = pp[len(rs) :].lstrip()
+                if rs and pp.startswith(rs + " "):
+                    pp = pp[len(rs) :].lstrip()
+                if rs and pp.startswith(rs + ">"):
+                    pp = pp[len(rs) :].lstrip()
+                out_parts.append(pp)
+            return ", ".join(out_parts)
         return s
 
     def text_excluding_tables(node):
@@ -243,7 +249,8 @@ def extract_with_adapter(adapter, html, input_path=None):
         try:
             inner = node.html() or ""
             tmp = pq("<div>%s</div>" % inner)
-            tmp.find("table").remove()
+            # remove table and code/pre blocks so paragraph text doesn't duplicate those blocks
+            tmp.find("table, pre, code").remove()
             return tmp.text().strip()
         except Exception:
             try:
@@ -254,6 +261,42 @@ def extract_with_adapter(adapter, html, input_path=None):
     sections = []
     # walk in document order under root
     for node in root.find("*").items():
+        # detect code blocks early: <pre> or <code> (inside pre)
+        try:
+            tag = getattr(node[0], "tag", "")
+            tagn = tag.lower() if isinstance(tag, str) else ""
+            # handle <pre> blocks, and standalone <code> blocks (not those inside <pre>)
+            if tagn == "pre" or (tagn == "code" and not node.parent().is_("pre")):
+                # prefer inner <code> if present
+                code_node = None
+                if tagn == "pre":
+                    c = node.find("code")
+                    if len(c) > 0:
+                        code_node = c.eq(0)
+                    else:
+                        code_node = node
+                else:
+                    code_node = node
+
+                code_text = code_node.text() or ""
+                # attempt to detect language from class or data-lang attrs
+                lang = None
+                cls = code_node.attr("class") or ""
+                if cls:
+                    m = re.search(r"(?:language|lang|code)-?(\w[\w+-]*)", cls, re.I)
+                    if m:
+                        lang = m.group(1)
+                if not lang:
+                    lang = (
+                        code_node.attr("data-lang")
+                        or code_node.attr("data-language")
+                        or None
+                    )
+
+                sections.append({"type": "code", "language": lang, "code": code_text})
+                continue
+        except Exception:
+            pass
         # skip nodes that contain large CSS/text noise
         try:
             ntext = node.text()
