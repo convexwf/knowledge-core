@@ -4,7 +4,7 @@
 # @FileName : scripts/extract_source.py
 # @Author : convexwf@gmail.com
 # @CreateDate : 2025-05-29 11:04
-# @UpdateTime : 2025-06-03 11:33
+# @UpdateTime : 2025-06-04 11:40
 
 import re
 import json
@@ -249,8 +249,9 @@ def extract_with_adapter(adapter, html, input_path=None):
         try:
             inner = node.html() or ""
             tmp = pq("<div>%s</div>" % inner)
-            # remove table and code/pre blocks so paragraph text doesn't duplicate those blocks
-            tmp.find("table, pre, code").remove()
+            # remove table and pre blocks so paragraph text doesn't duplicate those blocks
+            # keep inline <code> so inline code remains inside paragraph text
+            tmp.find("table, pre").remove()
             return tmp.text().strip()
         except Exception:
             try:
@@ -266,7 +267,32 @@ def extract_with_adapter(adapter, html, input_path=None):
             tag = getattr(node[0], "tag", "")
             tagn = tag.lower() if isinstance(tag, str) else ""
             # handle <pre> blocks, and standalone <code> blocks (not those inside <pre>)
-            if tagn == "pre" or (tagn == "code" and not node.parent().is_("pre")):
+            # decide whether this <code> is block-level (extract) or inline (keep in paragraph)
+            is_block_code = False
+            if tagn == "pre":
+                is_block_code = True
+            elif tagn == "code":
+                try:
+                    cls = (node.attr("class") or "")
+                except Exception:
+                    cls = ""
+                text_snippet = (node.text() or "")
+                # treat as block if class indicates language, or content is long, or contains explicit line breaks
+                if re.search(r"(?:language|lang|code)-?(\w[\w+-]*)", cls, re.I):
+                    is_block_code = True
+                elif "\n" in text_snippet:
+                    is_block_code = True
+                elif len(text_snippet) > 120:
+                    is_block_code = True
+                else:
+                    # if the <code> contains inner <br> or multiple child elements, consider block
+                    try:
+                        if node.find("br").length > 0:
+                            is_block_code = True
+                    except Exception:
+                        pass
+
+            if tagn == "pre" or (tagn == "code" and is_block_code):
                 # prefer inner <code> if present
                 code_node = None
                 if tagn == "pre":
@@ -278,7 +304,22 @@ def extract_with_adapter(adapter, html, input_path=None):
                 else:
                     code_node = node
 
-                code_text = code_node.text() or ""
+                # try to preserve original newlines and indentation from inner HTML
+                raw_inner = code_node.html() or ""
+                # replace block-level end tags with newlines to preserve structure
+                raw_inner = re.sub(r"(?i)</(div|p|li|tr|td|th)>", "\n", raw_inner)
+                # replace <br> with newline
+                raw_inner = re.sub(r"(?i)<br\s*/?>", "\n", raw_inner)
+                # remove remaining tags but keep their textual content
+                raw_inner = re.sub(r"<[^>]+>", "", raw_inner)
+                try:
+                    import html as _html
+
+                    code_text = _html.unescape(raw_inner)
+                    # normalize non-breaking spaces to regular spaces
+                    code_text = code_text.replace("\u00A0", " ")
+                except Exception:
+                    code_text = raw_inner
                 # attempt to detect language from class or data-lang attrs
                 lang = None
                 cls = code_node.attr("class") or ""
