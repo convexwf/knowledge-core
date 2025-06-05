@@ -4,7 +4,7 @@
 # @FileName : scripts/extract_source.py
 # @Author : convexwf@gmail.com
 # @CreateDate : 2025-05-29 11:04
-# @UpdateTime : 2025-06-04 11:40
+# @UpdateTime : 2025-06-05 11:54
 
 import re
 import json
@@ -267,30 +267,44 @@ def extract_with_adapter(adapter, html, input_path=None):
             tag = getattr(node[0], "tag", "")
             tagn = tag.lower() if isinstance(tag, str) else ""
             # handle <pre> blocks, and standalone <code> blocks (not those inside <pre>)
-            # decide whether this <code> is block-level (extract) or inline (keep in paragraph)
             is_block_code = False
             if tagn == "pre":
                 is_block_code = True
             elif tagn == "code":
                 try:
-                    cls = (node.attr("class") or "")
+                    cls = node.attr("class") or ""
                 except Exception:
                     cls = ""
-                text_snippet = (node.text() or "")
-                # treat as block if class indicates language, or content is long, or contains explicit line breaks
-                if re.search(r"(?:language|lang|code)-?(\w[\w+-]*)", cls, re.I):
+                text_snippet = node.text() or ""
+                # check parent tag: if parent is pre, treat as block
+                parent_tag = None
+                try:
+                    p = node.parent()
+                    parent_tag = getattr(p[0], "tag", "")
+                    if isinstance(parent_tag, str):
+                        parent_tag = parent_tag.lower()
+                except Exception:
+                    parent_tag = None
+
+                if parent_tag == "pre":
                     is_block_code = True
-                elif "\n" in text_snippet:
-                    is_block_code = True
-                elif len(text_snippet) > 120:
+                # treat as block if class indicates language
+                elif re.search(r"(?:language|lang|code)-?(\w[\w+-]*)", cls, re.I):
                     is_block_code = True
                 else:
-                    # if the <code> contains inner <br> or multiple child elements, consider block
+                    # prefer checking HTML for explicit line breaks or <br>
                     try:
-                        if node.find("br").length > 0:
-                            is_block_code = True
+                        inner_html = node.html() or ""
                     except Exception:
-                        pass
+                        inner_html = ""
+                    if "\n" in inner_html or re.search(r"<br\s*/?>", inner_html, re.I):
+                        is_block_code = True
+                    # very long inline code may be block-worthy
+                    elif len(text_snippet) > 200:
+                        is_block_code = True
+                    else:
+                        # otherwise treat as inline (do not extract separately)
+                        is_block_code = False
 
             if tagn == "pre" or (tagn == "code" and is_block_code):
                 # prefer inner <code> if present
@@ -304,22 +318,33 @@ def extract_with_adapter(adapter, html, input_path=None):
                 else:
                     code_node = node
 
-                # try to preserve original newlines and indentation from inner HTML
-                raw_inner = code_node.html() or ""
-                # replace block-level end tags with newlines to preserve structure
-                raw_inner = re.sub(r"(?i)</(div|p|li|tr|td|th)>", "\n", raw_inner)
-                # replace <br> with newline
-                raw_inner = re.sub(r"(?i)<br\s*/?>", "\n", raw_inner)
-                # remove remaining tags but keep their textual content
-                raw_inner = re.sub(r"<[^>]+>", "", raw_inner)
+                # For <pre> prefer element text_content to preserve newlines/indentation
+                code_text = ""
                 try:
-                    import html as _html
+                    if tagn == "pre":
+                        try:
+                            # lxml/html element method
+                            code_text = code_node[0].text_content()
+                        except Exception:
+                            code_text = code_node.text() or ""
+                    else:
+                        # for other block-like code, convert HTML to text but preserve <br> and block ends
+                        raw_inner = code_node.html() or ""
+                        raw_inner = re.sub(
+                            r"(?i)</(div|p|li|tr|td|th)>", "\n", raw_inner
+                        )
+                        raw_inner = re.sub(r"(?i)<br\s*/?>", "\n", raw_inner)
+                        raw_inner = re.sub(r"<[^>]+>", "", raw_inner)
+                        import html as _html
 
-                    code_text = _html.unescape(raw_inner)
-                    # normalize non-breaking spaces to regular spaces
-                    code_text = code_text.replace("\u00A0", " ")
+                        code_text = _html.unescape(raw_inner)
+                        code_text = code_text.replace("\u00a0", " ")
                 except Exception:
-                    code_text = raw_inner
+                    try:
+                        code_text = code_node.text() or ""
+                    except Exception:
+                        code_text = ""
+
                 # attempt to detect language from class or data-lang attrs
                 lang = None
                 cls = code_node.attr("class") or ""
@@ -447,7 +472,48 @@ def extract_with_adapter(adapter, html, input_path=None):
     if "image" not in meta or not meta.get("image"):
         meta["image"] = d("meta[property='og:image']").attr("content") or None
 
-    return {"meta": meta, "sections": sections}
+    # Post-process sections: remove adjacent duplicate code blocks and empty code blocks,
+    # and attempt simple reflow for single-line code blocks to restore probable line breaks.
+    proc = []
+    for s in sections:
+        if s.get("type") == "code":
+            code_text = s.get("code") or ""
+            # skip empty code blocks
+            if not code_text.strip():
+                continue
+            # attempt simple reflow when no newlines present
+            if "\n" not in code_text and len(code_text) > 80:
+                raw = code_text
+                # insert newlines after semicolons and closing braces
+                raw = re.sub(r";\s*", ";\n", raw)
+                raw = re.sub(r"\}\s*", "}\n", raw)
+                # ensure include/using/main/etc start on new lines
+                raw = re.sub(r"(#include\s+[<\"].+?[>\"])", r"\1\n", raw)
+                raw = re.sub(
+                    r"\b(using|int|void|class|struct|namespace)\b", r"\n\1", raw
+                )
+                # place line comments on their own line
+                raw = re.sub(r"\s*//", "\n//", raw)
+                # collapse multiple newlines
+                raw = re.sub(r"\n{2,}", "\n\n", raw)
+                code_text = raw.strip()
+                s["code"] = code_text
+        proc.append(s)
+
+    # remove adjacent duplicate code blocks (identical code after whitespace normalization)
+    deduped = []
+    prev = None
+    for s in proc:
+        if prev and s.get("type") == "code" and prev.get("type") == "code":
+            a = re.sub(r"\s+", " ", s.get("code", "").strip())
+            b = re.sub(r"\s+", " ", prev.get("code", "").strip())
+            if a == b:
+                # skip duplicate
+                continue
+        deduped.append(s)
+        prev = s
+
+    return {"meta": meta, "sections": deduped}
 
 
 def main(argv=None):
