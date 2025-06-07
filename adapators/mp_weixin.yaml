@@ -1,0 +1,41 @@
+site: mp.weixin.qq.com
+
+meta:
+  title: "css:h1#activity-name"
+  url:
+    - "css:link[rel='canonical']@href"
+    - "css:meta[property='og:url']@content"
+  fetch_time: "saved_time"
+  published_at: "css:em#publish_time"
+  updated_at: "css:em#update_time"
+
+content:
+  # Prefer operating inside the article container to avoid page chrome
+  root: "css:#js_content"
+  blocks:
+    - type: heading
+      # only headings inside the article content
+      selector: "#js_content h1, #js_content h2, #js_content h3"
+    - type: paragraph
+      selector: "#js_content p"
+    - type: table
+      # capture HTML tables inside the article so extractor can parse rows/headers
+      selector: "#js_content table"
+    - type: figure
+      selector: "#js_content img"
+      attrs:
+        src: "src"
+        caption: "alt"
+    - type: link
+      selector: "#js_content a"
+      attrs:
+        href: "href"
+        text: "text"
+  # optional: selectors to ignore (extractor may choose to honor these)
+  ignore:
+    - "#js_content style"
+    - "#js_content script"
+    - "#js_content .wx-profile-card"
+# Notes:
+# - `fetch_time: "saved_time"` signals the parser to populate fetch timestamp when saving.
+# - URL tries canonical then og:url as fallback.
