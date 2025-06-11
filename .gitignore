@@ -1,2 +1,12 @@
 data/
 adapters/
+
+# SpecStory project identity file
+/.project.json
+.specstory/
+# SpecStory explanation file
+/.what-is-this.md
+
+# cursor
+.cursor/
+.cursorindexingignore
