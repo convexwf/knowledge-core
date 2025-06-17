@@ -1,5 +1,12 @@
 # knowledge-core
 
+## Directory layout
+
+- **Code (repo root):** `cmd/` (Go executables), `fetch/` (Go acquisition logic), `ingest/` (Python parse, normalize, assets, sink), `configs/`, `schemas/`, `doc/`, `reference/`. **Entry:** use the **Makefile** (`make build`, `make fetch`, `make ingest`, `make run URL=...`, `make docker-up`).
+- **Runtime data (under `data/`, gitignored):** `data/rawdocs/` (raw fetched/imported content), `data/assets/` (extracted images), `data/docs/` (normalized JSON and Markdown). All ingestion outputs go here so the root stays code-only.
+- **Samples:** Optional sample HTML files under `reference/samples/` (e.g. `make run FILE=reference/samples/...`).
+- **Build:** `make build` or `go build -o bin/acquire ./cmd/acquire`; `bin/` is gitignored.
+
 ## html 抽取 （早期的一些想法）
 
 对于每个站点，编写对应的抽取规则，比如说 `mp.weixin.qq.com`，编写对应的 `mp_weixin.yaml` 作为抽取规则文件，放到 `adapters/html_extractor/rules` 目录下。
@@ -184,11 +191,11 @@ Input → Acquire → RawDoc → Parse → Normalize → Assets → Sink
 
 ### 存储（图片与原文）
 
-建议一开始就按“可回放”设计：
+建议一开始就按“可回放”设计，运行时数据统一放在 `data/` 下（该目录已 gitignore）：
 
-* `rawdocs/`：原始 HTML/PDF/EPUB
-* `assets/`：图片资源（统一命名）
-* `docs/`：解析后的标准 JSON/Markdown
+* `data/rawdocs/`：原始 HTML/PDF/EPUB
+* `data/assets/`：图片资源（统一命名）
+* `data/docs/`：解析后的标准 JSON/Markdown
 
 ---
 
@@ -196,28 +203,22 @@ Input → Acquire → RawDoc → Parse → Normalize → Assets → Sink
 
 ```
 repo/
-├── engine/                 # Go ingestion engine
-│   ├── cmd/
-│   ├── acquire/            # http fetcher / file importer
-│   ├── router/             # routes.yaml matching
-│   ├── pipeline/
-│   ├── storage/            # rawdocs/assets/docs
-│   └── model/              # RawDoc / Document schema
-│
-├── parsers/                # Python parser plugins
-│   ├── runtime/            # registry + dispatcher
-│   ├── html/               # site parsers
-│   ├── pdf/                # docling parser
-│   ├── epub/               # epub parser
+├── cmd/                    # Go acquire 等
+├── engine/                 # Python normalize、assets
+├── parsers/                # Python parser 插件
+│   ├── html/adapters/
+│   ├── pdf/
+│   ├── epub/
 │   └── common/
-│
 ├── configs/
 │   └── routes.yaml
-│
 ├── schemas/
 │   ├── rawdoc.json
 │   └── document.json
-│
+├── data/                   # 运行时数据（gitignore）
+│   ├── rawdocs/
+│   ├── assets/
+│   └── docs/
 └── docker/
 ```
 

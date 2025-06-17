@@ -1,5 +1,34 @@
+# Runtime and build output
 data/
-adapters/
+bin/
+
+# Go
+vendor/
+*.exe
+*.test
+*.out
+coverage.out
+go.work
+go.work.sum
+
+# Python
+__pycache__/
+*.py[cod]
+*$py.class
+.Python
+venv/
+.venv/
+env/
+*.egg-info/
+*.egg
+.eggs/
+dist/
+build/
+.pytest_cache/
+.mypy_cache/
+.coverage
+htmlcov/
+*.manifest
 
 # SpecStory project identity file
 /.project.json

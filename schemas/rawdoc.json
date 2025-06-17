@@ -1,0 +1,57 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "rawdoc",
+  "title": "RawDoc",
+  "description": "Contract between Acquire and Parse: raw input metadata and storage path",
+  "type": "object",
+  "required": [
+    "rawdoc_id",
+    "source_type",
+    "source_uri",
+    "fetch_time",
+    "storage_path"
+  ],
+  "properties": {
+    "rawdoc_id": {
+      "type": "string",
+      "format": "uuid",
+      "description": "Unique id for this raw document"
+    },
+    "source_type": {
+      "type": "string",
+      "enum": [
+        "url",
+        "singlefile_html",
+        "pdf",
+        "epub"
+      ],
+      "description": "How the content was acquired"
+    },
+    "source_uri": {
+      "type": "string",
+      "description": "URL or file path of the source"
+    },
+    "fetch_time": {
+      "type": "string",
+      "format": "date-time",
+      "description": "When the content was fetched or imported (ISO8601)"
+    },
+    "storage_path": {
+      "type": "string",
+      "description": "Path (relative to repo root or configured root) where raw bytes are stored"
+    },
+    "content_type": {
+      "type": "string",
+      "description": "MIME type, e.g. text/html, application/pdf"
+    },
+    "content_length": {
+      "type": "integer",
+      "minimum": 0
+    },
+    "metadata": {
+      "type": "object",
+      "additionalProperties": true
+    }
+  },
+  "additionalProperties": false
+}

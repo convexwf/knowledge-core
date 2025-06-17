@@ -1,0 +1,20 @@
+# Juejin (juejin.cn) article adapter.
+meta:
+  title: "css:.article-title, css:h1"
+  url: "css:link[rel=canonical]@href"
+content:
+  root: "css:main, css:.article-content, css:article, css:body"
+  blocks:
+    - type: heading
+      selector: "h1, h2, h3, h4, h5, h6"
+    - type: paragraph
+      selector: "p"
+    - type: code
+      selector: "pre code, pre"
+    - type: figure
+      selector: "img"
+      attrs:
+        src: "src"
+        caption: "alt"
+    - type: paragraph
+      selector: "div"

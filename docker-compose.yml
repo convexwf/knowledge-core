@@ -1,0 +1,24 @@
+services:
+  acquire:
+    build:
+      context: .
+      dockerfile: Dockerfile.acquire
+    volumes:
+      - data_vol:/data
+    # Example: run once with URL (override in run command)
+    # command: ["/app/acquire", "-url", "https://example.com", "-rawdocs", "/data/rawdocs"]
+    # Leave default entrypoint; call via: docker compose run acquire -url https://...
+
+  ingest:
+    build:
+      context: .
+      dockerfile: Dockerfile.ingest
+    volumes:
+      - data_vol:/data
+    # Polls /data/rawdocs every 30s, writes to /data/docs and /data/assets
+    command: ["python", "-m", "ingest.poller", "--interval", "30", "--rawdocs", "/data/rawdocs", "--assets", "/data/assets", "--docs", "/data/docs"]
+    depends_on:
+      - acquire
+
+volumes:
+  data_vol:

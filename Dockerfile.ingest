@@ -1,0 +1,15 @@
+# Ingest service: Python parser + normalizer + poller
+FROM python:3.12-slim
+WORKDIR /app
+
+COPY requirements.txt ./
+RUN pip install --no-cache-dir -r requirements.txt
+
+COPY configs/ ./configs/
+COPY schemas/ ./schemas/
+COPY ingest/ ./ingest/
+
+# Shared data volume mounted at /data (rawdocs, assets, docs)
+ENV REPO_ROOT=/app
+# Poller runs by default
+CMD ["python", "-m", "ingest.poller", "--interval", "30", "--rawdocs", "/data/rawdocs", "--assets", "/data/assets", "--docs", "/data/docs"]

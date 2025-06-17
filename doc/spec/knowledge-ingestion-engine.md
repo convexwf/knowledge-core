@@ -44,12 +44,14 @@
 - [8. Go–Python boundary](#8-gopython-boundary)
   - [8.1. Initial: stdin/stdout JSON](#81-initial-stdinstdout-json)
   - [8.2. Future: gRPC or HTTP parser service](#82-future-grpc-or-http-parser-service)
-- [9. Storage layout](#9-storage-layout)
-- [10. Error handling and replay](#10-error-handling-and-replay)
-  - [10.1. Failure isolation](#101-failure-isolation)
-  - [10.2. Replay and idempotency](#102-replay-and-idempotency)
-- [11. Testing strategy](#11-testing-strategy)
-- [12. Implementation phases](#12-implementation-phases)
+- [10. Storage layout](#10-storage-layout)
+  - [10.1 Build and run (Makefile)](#101-build-and-run-makefile)
+  - [10.2 Deployment (Docker)](#102-deployment-docker)
+- [11. Error handling and replay](#11-error-handling-and-replay)
+  - [11.1. Failure isolation](#111-failure-isolation)
+  - [11.2. Replay and idempotency](#112-replay-and-idempotency)
+- [12. Testing strategy](#12-testing-strategy)
+- [13. Implementation phases](#13-implementation-phases)
 - [14. Design choices within the recommendation](#14-design-choices-within-the-recommendation)
 - [15. Open questions](#15-open-questions)
 - [16. References](#16-references)
@@ -501,38 +503,52 @@ The parser runtime (Python) loads the adapter YAML, fetches HTML from the path i
 
 ## 10. Storage layout
 
-Recommended directory layout (aligns with README and supports replay):
+Recommended directory layout (aligns with README and supports replay). Runtime data lives under `data/` so the repository root stays code-only and `data/` can be gitignored. When deploying with Docker, `data/` is provided by a shared volume so acquire and ingest services communicate via the same directory.
 
 ```
 repo/
-├── engine/                    # Go ingestion engine
-│   ├── cmd/
-│   ├── acquire/
-│   ├── router/
-│   ├── pipeline/
-│   ├── storage/
-│   └── model/
-├── parsers/                   # Python parser plugins
-│   ├── runtime/
+├── cmd/                       # Go executables (e.g. acquire)
+├── fetch/                     # Go: acquisition logic (RawDoc, URL/file fetch)
+├── ingest/                    # Python: parse, normalize, assets, sink
 │   ├── html/
 │   │   └── adapters/
-│   ├── pdf/
-│   ├── epub/
-│   └── common/
+│   └── ...
 ├── configs/
 │   └── routes.yaml
 ├── schemas/
 │   ├── rawdoc.json
 │   └── document.json
-├── rawdocs/                   # Raw content (by rawdoc_id)
-├── assets/                    # Extracted images and binaries
-├── docs/                      # Normalized documents (doc_id.json / doc_id.md)
-└── docker/
+├── data/                      # Runtime data (gitignored)
+│   ├── rawdocs/               # Raw content (by rawdoc_id)
+│   ├── assets/                # Extracted images and binaries
+│   └── docs/                  # Normalized documents (doc_id.json / doc_id.md)
+├── Dockerfile.acquire
+├── Dockerfile.ingest
+└── docker-compose.yml
 ```
 
-- **rawdocs/:** One file per RawDoc (e.g. `<rawdoc_id>.html`). RawDoc meta can be in the same directory or in a small index DB.
-- **assets/:** Flat or hashed subdirs; filenames by asset_id or doc_id + index. No inline base64 in `docs/`.
-- **docs/:** One JSON (and optionally one Markdown) per doc_id for downstream consumption.
+- **data/rawdocs/:** One file per RawDoc (e.g. `<rawdoc_id>.html`). RawDoc meta can be in the same directory or in a small index DB.
+- **data/assets/:** Flat or hashed subdirs; filenames by asset_id or doc_id + index. No inline base64 in output docs.
+- **data/docs/:** One JSON (and optionally one Markdown) per doc_id for downstream consumption.
+
+### 10.1 Build and run (Makefile)
+
+The project entry point is the **Makefile**. Supported targets:
+
+- **build:** Compile Go `bin/acquire`. **build-py:** Install Python dependencies.
+- **fetch:** Acquire only — `make fetch URL=https://...` or `make fetch FILE=path/to/file.html`. Writes only to `data/rawdocs/`.
+- **ingest:** Ingest only — `make ingest` (all unprocessed RawDocs) or `make ingest RAWDOC_ID=id`. Reads `data/rawdocs/`, writes `data/docs/` and `data/assets/`.
+- **run:** Full pipeline for one URL or file — `make run URL=https://...` (fetch then ingest).
+- **docker-build / docker-up:** Build and start the two services. **clean:** Remove `bin/` and caches.
+
+### 10.2 Deployment (Docker)
+
+Deployment uses **docker-compose** with two services and a **shared volume** for `data/`:
+
+- **acquire:** Go binary. Writes `data/rawdocs/`. Invoked on demand (e.g. `docker compose run acquire -url https://...`).
+- **ingest:** Python service running the **poller**: periodically scans `data/rawdocs/*.meta.json`, skips already-processed RawDocs (`.done` marker), and runs parse → normalize → assets → sink for each new one. Writes `data/docs/` and `data/assets/`.
+
+No network RPC between services; communication is via the shared `data/` volume.
 
 ---
 

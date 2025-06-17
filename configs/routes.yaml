@@ -1,0 +1,7 @@
+# Parser routing: first matching rule wins. Used for HTML source_type only.
+routes:
+  - domain: "juejin.cn"
+    path_prefix: "/post/"
+    adapter: "ingest/html/adapters/juejin.yaml"
+  - domain: "*"
+    adapter: "ingest/html/adapters/generic.yaml"

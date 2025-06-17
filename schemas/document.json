@@ -1,0 +1,65 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "document",
+  "title": "Document",
+  "description": "Normalized output for downstream chunking/embedding",
+  "type": "object",
+  "required": ["doc_id", "meta", "sections"],
+  "properties": {
+    "doc_id": { "type": "string", "format": "uuid" },
+    "meta": {
+      "type": "object",
+      "required": ["title", "source", "ingested_at"],
+      "properties": {
+        "title": { "type": "string" },
+        "source": {
+          "type": "object",
+          "required": ["type", "path"],
+          "properties": {
+            "type": { "type": "string", "enum": ["html", "pdf", "epub"] },
+            "path": { "type": "string" },
+            "url": { "type": ["string", "null"] },
+            "rawdoc_id": { "type": "string" }
+          }
+        },
+        "authors": { "type": "array", "items": { "type": "string" } },
+        "published_at": { "type": ["string", "null"], "format": "date-time" },
+        "updated_at": { "type": ["string", "null"], "format": "date-time" },
+        "ingested_at": { "type": "string", "format": "date-time" },
+        "language": { "type": "string" },
+        "tags": { "type": "array", "items": { "type": "string" } },
+        "parser_version": { "type": "string" }
+      }
+    },
+    "sections": {
+      "type": "array",
+      "items": {
+        "type": "object",
+        "properties": {
+          "section_id": { "type": "string" },
+          "type": {
+            "type": "string",
+            "enum": ["heading", "paragraph", "list", "table", "code", "figure"]
+          },
+          "level": { "type": "integer", "minimum": 1, "maximum": 6 },
+          "content": { "type": "string" },
+          "items": { "type": "array", "items": { "type": "string" } },
+          "rows": { "type": "array" },
+          "assets": {
+            "type": "array",
+            "items": {
+              "type": "object",
+              "properties": {
+                "asset_id": { "type": "string" },
+                "path": { "type": "string" },
+                "caption": { "type": ["string", "null"] }
+              }
+            }
+          },
+          "annotations": { "type": "object" }
+        }
+      }
+    }
+  },
+  "additionalProperties": false
+}

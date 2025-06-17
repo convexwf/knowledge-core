@@ -45,6 +45,8 @@
   - [9.1. 初期：stdin/stdout JSON](#91-初期stdinstdout-json)
   - [9.2. 后续：gRPC 或 HTTP 解析服务](#92-后续grpc-或-http-解析服务)
 - [10. 存储布局](#10-存储布局)
+  - [10.1 构建与运行（Makefile）](#101-构建与运行makefile)
+  - [10.2 部署（Docker）](#102-部署docker)
 - [11. 错误处理与回放](#11-错误处理与回放)
   - [11.1. 失败隔离](#111-失败隔离)
   - [11.2. 回放与幂等](#112-回放与幂等)
@@ -433,27 +435,51 @@ RawDoc 是 Acquire 与 Parse 之间的契约，以 JSON 存储（如 `rawdocs/<r
 
 ## 10. 存储布局
 
-与 README 一致、支持回放的推荐目录结构（同英文版 10）：
+与 README 一致、支持回放的推荐目录结构。运行时数据统一放在 `data/` 下，仓库根目录仅保留代码与配置，`data/` 可整体加入 .gitignore。Docker 部署时由共享 volume 提供 `data/`，acquire 与 ingest 通过该目录解耦通讯。
 
 ```
 repo/
-├── engine/
-├── parsers/
-│   ├── runtime/
+├── cmd/                        # Go 可执行入口
+├── fetch/                      # Go：抓取逻辑（RawDoc、URL/文件拉取）
+├── ingest/                     # Python：解析、规范化、资源、落盘
 │   ├── html/adapters/
-│   ├── pdf/
-│   ├── epub/
-│   └── common/
+│   └── ...
 ├── configs/
 │   └── routes.yaml
 ├── schemas/
 │   ├── rawdoc.json
 │   └── document.json
-├── rawdocs/
-├── assets/
-├── docs/
-└── docker/
+├── data/                       # 运行时数据（gitignore）
+│   ├── rawdocs/                # 原始抓取/导入内容
+│   ├── assets/                 # 抽取的图片等资源
+│   └── docs/                   # 规范化后的文档输出
+├── Dockerfile.acquire
+├── Dockerfile.ingest
+└── docker-compose.yml
 ```
+
+- **data/rawdocs/：** 每个 RawDoc 一个文件（如 `<rawdoc_id>.html`），meta 可同目录或独立索引。
+- **data/assets/：** 扁平或按 hash 分子目录；文件名按 asset_id 或 doc_id+序号；输出文档中不含内联 base64。
+- **data/docs/：** 每个 doc_id 一个 JSON（及可选一个 Markdown），供下游消费。
+
+### 10.1 构建与运行（Makefile）
+
+统一入口为 **Makefile**。常用 target：
+
+- **build：** 编译 Go 得到 `bin/acquire`。**build-py：** 安装 Python 依赖。
+- **fetch：** 仅拉取 — `make fetch URL=https://...` 或 `make fetch FILE=path/to/file.html`，仅写入 `data/rawdocs/`。
+- **ingest：** 仅解析 — `make ingest`（处理所有未处理 RawDoc）或 `make ingest RAWDOC_ID=id`，读 `data/rawdocs/`，写 `data/docs/`、`data/assets/`。
+- **run：** 拉取+解析单页 — `make run URL=https://...`（先 fetch 再 ingest）。
+- **docker-build / docker-up：** 构建并启动两服务。**clean：** 清理 `bin/` 与缓存。
+
+### 10.2 部署（Docker）
+
+部署使用 **docker-compose** 两个服务，通过 **共享 volume** 挂载 `data/`：
+
+- **acquire：** Go 二进制，写入 `data/rawdocs/`；按需调用（如 `docker compose run acquire -url https://...`）。
+- **ingest：** Python 服务运行 **poller**：定期扫描 `data/rawdocs/*.meta.json`，跳过已处理（`.done` 标记），对新增 RawDoc 执行解析 → 规范化 → 资源 → 落盘，写入 `data/docs/`、`data/assets/`。
+
+两服务之间无网络 RPC，仅通过共享的 `data/` volume 通讯。
 
 ---
 
