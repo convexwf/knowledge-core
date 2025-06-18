@@ -1,9 +1,14 @@
-# Juejin (juejin.cn) article adapter.
+# Juejin (juejin.cn) — for HTTP-fetched page HTML (Go fetch), not SingleFile.
+# SSR HTML: article body is in #article-root .article-viewer.markdown-body; meta from itemprop.
 meta:
-  title: "css:.article-title, css:h1"
+  title: "css:meta[itemprop=headline]@content"
   url: "css:link[rel=canonical]@href"
+  published_at: "css:meta[itemprop=datePublished]@content"
+  authors: "css:div[itemprop=author] meta[itemprop=name]@content"
 content:
-  root: "css:main, css:.article-content, css:article, css:body"
+  root: "css:#article-root"
+  # Block order: first match wins. blockquote/list are emitted as one section (parser skips
+  # their descendants). img is always figure even inside p — do not skip descendants for p.
   blocks:
     - type: heading
       selector: "h1, h2, h3, h4, h5, h6"
@@ -16,5 +21,7 @@ content:
       attrs:
         src: "src"
         caption: "alt"
+    - type: list
+      selector: "ul, ol"
     - type: paragraph
-      selector: "div"
+      selector: "blockquote"
