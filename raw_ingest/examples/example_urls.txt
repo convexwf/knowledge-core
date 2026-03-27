@@ -1,0 +1,2 @@
+# Example: make raw-ingest-freedium-batch FILE=raw_ingest/examples/example_urls.txt
+https://freedium-mirror.cfd/https://medium.com/language-lab/how-many-words-do-you-need-to-learn-a-language-8a6f5e5b1646

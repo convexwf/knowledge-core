@@ -1,5 +1,7 @@
 # Knowledge-core: acquire (Go) + ingest (Python). Use make fetch | ingest | run.
-.PHONY: build build-py fetch ingest run docker-build docker-up clean
+.PHONY: build build-py fetch ingest run docker-build docker-up clean \
+	raw-ingest-freedium-deps raw-ingest-freedium raw-ingest-freedium-batch \
+	raw-ingest-meituan-tech-deps raw-ingest-meituan-tech raw-ingest-meituan-tech-batch
 
 REPO_ROOT := $(CURDIR)
 DATA_RAWDOCS := $(REPO_ROOT)/data/rawdocs
@@ -64,3 +66,34 @@ clean:
 	rm -rf bin/
 	find . -type d -name __pycache__ -exec rm -rf {} + 2>/dev/null || true
 	@echo "Optionally remove data: rm -rf data/"
+
+# raw_ingest: Freedium -> Medium (standalone Python under raw_ingest/)
+RAW_INGEST_DIR := $(REPO_ROOT)/raw_ingest
+
+raw-ingest-freedium-deps:
+	@cd "$(RAW_INGEST_DIR)" && pip install -q -r requirements.txt
+
+# Single URL: make raw-ingest-freedium URL='https://freedium-mirror.cfd/https://medium.com/...'
+# Optional CANONICAL=https://medium.com/... if not derivable from URL
+raw-ingest-freedium: raw-ingest-freedium-deps
+	@test -n "$(URL)" || (echo "Usage: make raw-ingest-freedium URL='https://freedium-mirror.cfd/https://medium.com/...'"; exit 1)
+	@cd "$(RAW_INGEST_DIR)" && python sites/medium_freedium.py --fetch-url "$(URL)" $(if $(CANONICAL),--canonical-url "$(CANONICAL)")
+
+# Batch: FILE is a text file, one Freedium (or fetch|canonical) URL per line; # starts comments
+raw-ingest-freedium-batch: raw-ingest-freedium-deps
+	@test -n "$(FILE)" || (echo "Usage: make raw-ingest-freedium-batch FILE=path/to/urls.txt"; exit 1)
+	@cd "$(RAW_INGEST_DIR)" && python sites/medium_freedium.py --urls-file "$(abspath $(FILE))"
+
+# Meituan tech blog (tech.meituan.com)
+raw-ingest-meituan-tech-deps:
+	@cd "$(RAW_INGEST_DIR)" && pip install -q -r requirements.txt
+
+# Single URL: make raw-ingest-meituan-tech URL='https://tech.meituan.com/2026/03/20/....html'
+raw-ingest-meituan-tech: raw-ingest-meituan-tech-deps
+	@test -n "$(URL)" || (echo "Usage: make raw-ingest-meituan-tech URL='https://tech.meituan.com/...'"; exit 1)
+	@cd "$(RAW_INGEST_DIR)" && python sites/meituan_tech.py --fetch-url "$(URL)" $(if $(CANONICAL),--canonical-url "$(CANONICAL)")
+
+# Batch: one article URL per line; optional fetch|canonical; # starts comments
+raw-ingest-meituan-tech-batch: raw-ingest-meituan-tech-deps
+	@test -n "$(FILE)" || (echo "Usage: make raw-ingest-meituan-tech-batch FILE=path/to/urls.txt"; exit 1)
+	@cd "$(RAW_INGEST_DIR)" && python sites/meituan_tech.py --urls-file "$(abspath $(FILE))"
