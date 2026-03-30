@@ -1,8 +1,12 @@
 # Mixed hosts: make raw-ingest-batch FILE=raw_ingest/examples/example_urls.txt
-# Supported hosts are listed in raw_ingest/sites/supported_sites.txt; others log UNSUPPORTED and skip.
+# One sample URL per supported parser (see raw_ingest/sites/supported_sites.txt).
+# blog.x.com often blocks plain HTTP; if batch fails, use fetch|canonical with web.archive.org.
 https://freedium-mirror.cfd/https://medium.com/language-lab/how-many-words-do-you-need-to-learn-a-language-8a6f5e5b1646
 https://engineering.fb.com/2025/10/17/ai-research/scaling-llm-inference-innovations-tensor-parallelism-context-parallelism-expert-parallelism/
 https://vickiboykis.com/2026/03/04/antidote/
 https://www.allthingsdistributed.com/2026/02/a-chat-with-byron-cook-on-automated-reasoning-and-trust-in-ai-systems.html
 https://www.brendangregg.com/blog/2026-02-07/why-i-joined-openai.html
 https://blog.google/company-news/inside-google/message-ceo/sundar-pichai-ai-impact-summit-2026/
+https://www.smashingmagazine.com/2026/03/site-search-paradox-why-big-box-always-wins/
+https://blog.x.com/engineering/en_us/topics/infrastructure/2023/how-we-scaled-reads-on-the-twitter-users-database
+https://stripe.com/blog/can-ai-agents-build-real-stripe-integrations

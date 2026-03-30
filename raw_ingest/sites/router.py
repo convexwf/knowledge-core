@@ -3,6 +3,7 @@
 Route raw_ingest fetch URLs to site-specific run_one implementations.
 
 Supported hosts are listed in supported_sites.txt (hostname -> module under sites/), e.g. blog.google, brendangregg.com, tech.meituan.com.
+Fetch URLs on web.archive.org resolve the embedded original URL’s host and dispatch to that site’s parser (useful when the live site blocks requests).
 
 Batch: unsupported hosts print UNSUPPORTED to stderr and skip (exit 0 unless a run fails).
 Single URL: unsupported host -> exit 1.
@@ -61,9 +62,35 @@ def _load_registry() -> dict[str, RunOne]:
     return _REGISTRY
 
 
+def _inner_url_from_wayback(fetch_url: str) -> str | None:
+    """If fetch_url is web.archive.org/.../https://original/..., return the original URL."""
+    u = urlparse(fetch_url)
+    host = (u.hostname or "").lower()
+    if host != "web.archive.org":
+        return None
+    path = u.path or ""
+    if not path.startswith("/web/"):
+        return None
+    parts = path.split("/", 3)
+    if len(parts) < 4:
+        return None
+    inner = parts[3]
+    if inner.startswith("http://") or inner.startswith("https://"):
+        return inner
+    return None
+
+
 def resolve_run_one(fetch_url: str) -> RunOne | None:
+    reg = _load_registry()
     host = (urlparse(fetch_url).hostname or "").lower()
-    return _load_registry().get(host)
+    runner = reg.get(host)
+    if runner is not None:
+        return runner
+    inner = _inner_url_from_wayback(fetch_url)
+    if inner:
+        inner_host = (urlparse(inner).hostname or "").lower()
+        return reg.get(inner_host)
+    return None
 
 
 def parse_urls_file_line(line: str) -> tuple[str, str] | None:

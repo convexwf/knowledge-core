@@ -3,9 +3,16 @@
 # Keep in sync with resolve logic (single source of truth for supported hosts).
 
 freedium-mirror.cfd	medium_freedium
+engineering.fb.com	engineering_fb
 tech.meituan.com	meituan_tech
+vickiboykis.com	vickiboykis
+www.vickiboykis.com	vickiboykis
 www.allthingsdistributed.com	allthings_distributed
 allthingsdistributed.com	allthings_distributed
 www.brendangregg.com	brendan_gregg_blog
 brendangregg.com	brendan_gregg_blog
 blog.google	blog_google
+www.smashingmagazine.com	smashing_magazine
+smashingmagazine.com	smashing_magazine
+blog.x.com	blog_x_com
+blog.twitter.com	blog_x_com
