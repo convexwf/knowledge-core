@@ -1,5 +1,6 @@
 # Knowledge-core: acquire (Go) + ingest (Python). Use make fetch | ingest | run.
 .PHONY: build build-py fetch ingest run docker-build docker-up clean \
+	raw-ingest-deps raw-ingest raw-ingest-batch \
 	raw-ingest-freedium-deps raw-ingest-freedium raw-ingest-freedium-batch \
 	raw-ingest-meituan-tech-deps raw-ingest-meituan-tech raw-ingest-meituan-tech-batch
 
@@ -69,6 +70,20 @@ clean:
 
 # raw_ingest: Freedium -> Medium (standalone Python under raw_ingest/)
 RAW_INGEST_DIR := $(REPO_ROOT)/raw_ingest
+
+# Unified router: Freedium, Meituan tech, All Things Distributed (see raw_ingest/sites/router.py)
+raw-ingest-deps:
+	@cd "$(RAW_INGEST_DIR)" && pip install -q -r requirements.txt
+
+# Single URL: make raw-ingest URL='https://...'  (optional CANONICAL=... for Freedium)
+raw-ingest: raw-ingest-deps
+	@test -n "$(URL)" || (echo "Usage: make raw-ingest URL='https://...'"; exit 1)
+	@cd "$(RAW_INGEST_DIR)" && python sites/router.py --url "$(URL)" $(if $(CANONICAL),--canonical-url "$(CANONICAL)")
+
+# Mixed URL list: unsupported hosts are skipped (stderr UNSUPPORTED); see raw_ingest/examples/example_urls.txt
+raw-ingest-batch: raw-ingest-deps
+	@test -n "$(FILE)" || (echo "Usage: make raw-ingest-batch FILE=path/to/urls.txt"; exit 1)
+	@cd "$(RAW_INGEST_DIR)" && python sites/router.py --urls-file "$(abspath $(FILE))"
 
 raw-ingest-freedium-deps:
 	@cd "$(RAW_INGEST_DIR)" && pip install -q -r requirements.txt

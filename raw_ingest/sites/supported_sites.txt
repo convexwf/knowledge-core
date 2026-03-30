@@ -1,0 +1,11 @@
+# Hostname (lowercase) and Python module name under sites/ (no .py extension).
+# Router loads this file — add a row and a matching sites/<module>.py with run_one().
+# Keep in sync with resolve logic (single source of truth for supported hosts).
+
+freedium-mirror.cfd	medium_freedium
+tech.meituan.com	meituan_tech
+www.allthingsdistributed.com	allthings_distributed
+allthingsdistributed.com	allthings_distributed
+www.brendangregg.com	brendan_gregg_blog
+brendangregg.com	brendan_gregg_blog
+blog.google	blog_google
