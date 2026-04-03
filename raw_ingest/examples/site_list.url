@@ -1,0 +1,15 @@
+# One row per site: site_id<TAB>list_url  (# comments)
+# site_id matches raw_ingest/sites/<module>.py name (e.g. engineering_fb).
+# Medium: RSS from medium.com (not Freedium); publication matches example_urls language-lab.
+# blog_x_com: no stable public RSS; use Wayback-wrapped engineering hub if live site is blocked.
+
+medium_freedium	https://medium.com/feed/language-lab
+engineering_fb	https://engineering.fb.com/feed/
+meituan_tech	https://tech.meituan.com/feed/
+vickiboykis	https://vickiboykis.com/index.xml
+allthings_distributed	https://www.allthingsdistributed.com/atom.xml
+brendan_gregg_blog	https://www.brendangregg.com/blog/rss.xml
+# blog.google/feed/ is a JS shell; use /rss/ for machine-readable RSS.
+blog_google	https://blog.google/rss/
+smashing_magazine	https://www.smashingmagazine.com/feed/
+blog_x_com	https://web.archive.org/web/20241201000000/https://blog.x.com/engineering/en_us

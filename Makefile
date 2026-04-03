@@ -1,6 +1,6 @@
 # Knowledge-core: acquire (Go) + ingest (Python). Use make fetch | ingest | run.
 .PHONY: build build-py fetch ingest run docker-build docker-up clean \
-	raw-ingest-deps raw-ingest raw-ingest-batch \
+	raw-ingest-deps raw-ingest raw-ingest-batch raw-ingest-list \
 	raw-ingest-freedium-deps raw-ingest-freedium raw-ingest-freedium-batch \
 	raw-ingest-meituan-tech-deps raw-ingest-meituan-tech raw-ingest-meituan-tech-batch
 
@@ -84,6 +84,10 @@ raw-ingest: raw-ingest-deps
 raw-ingest-batch: raw-ingest-deps
 	@test -n "$(FILE)" || (echo "Usage: make raw-ingest-batch FILE=path/to/urls.txt"; exit 1)
 	@cd "$(RAW_INGEST_DIR)" && python sites/router.py --urls-file "$(abspath $(FILE))"
+
+# Post list snapshots: site_id + tab + RSS/hub URL; default FILE is raw_ingest/examples/site_list.url
+raw-ingest-list: raw-ingest-deps
+	@cd "$(RAW_INGEST_DIR)" && python list/fetch_post_lists.py --urls-file "$(if $(FILE),$(abspath $(FILE)),$(REPO_ROOT)/raw_ingest/examples/site_list.url)"
 
 raw-ingest-freedium-deps:
 	@cd "$(RAW_INGEST_DIR)" && pip install -q -r requirements.txt
