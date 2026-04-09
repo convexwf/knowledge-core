@@ -92,6 +92,39 @@
         }
       }
     },
+    "references": {
+      "type": "array",
+      "description": "Bibliography entries resolved from source (e.g. ar5iv HTML); cite ref_id matches ref_id here",
+      "items": {
+        "type": "object",
+        "required": [
+          "ref_id",
+          "text"
+        ],
+        "properties": {
+          "ref_id": {
+            "type": "string",
+            "description": "Stable id, e.g. bib.bib2 from HTML anchor"
+          },
+          "label": {
+            "type": "string",
+            "description": "Human label from bibliography, e.g. [2]"
+          },
+          "text": {
+            "type": "string",
+            "description": "Full entry as plain text"
+          },
+          "blocks": {
+            "type": "array",
+            "items": {
+              "type": "string"
+            },
+            "description": "LaTeXML ltx_bibblock segments when present"
+          }
+        },
+        "additionalProperties": false
+      }
+    },
     "sections": {
       "type": "array",
       "items": {
@@ -190,6 +223,57 @@
           },
           "required": [
             "math"
+          ],
+          "additionalProperties": false
+        },
+        {
+          "type": "object",
+          "description": "Bibliography citation (LaTeXML cite); omitted from Markdown export",
+          "properties": {
+            "cite": {
+              "type": "array",
+              "items": {
+                "type": "object",
+                "properties": {
+                  "ref_id": {
+                    "type": "string",
+                    "description": "In-document anchor id, e.g. bib.bib35"
+                  },
+                  "label": {
+                    "type": "string",
+                    "description": "Numeric or textual label shown in the PDF-style cite"
+                  }
+                },
+                "required": [
+                  "ref_id"
+                ]
+              }
+            }
+          },
+          "required": [
+            "cite"
+          ],
+          "additionalProperties": false
+        },
+        {
+          "type": "object",
+          "description": "Table embedded in a paragraph flow",
+          "properties": {
+            "table": {
+              "type": "object",
+              "required": [
+                "rows"
+              ],
+              "properties": {
+                "rows": {
+                  "type": "array"
+                }
+              },
+              "additionalProperties": false
+            }
+          },
+          "required": [
+            "table"
           ],
           "additionalProperties": false
         }

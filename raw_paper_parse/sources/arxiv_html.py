@@ -130,8 +130,22 @@ def _is_display_math(m: Tag) -> bool:
     return "ltx_Math_display" in cls
 
 
+def _extract_cite_refs(cite: Tag) -> list[dict[str, str]]:
+    """LaTeXML \\citep: <a href=\"#bib.bib35\" class=\"ltx_ref\">35</a>."""
+    refs: list[dict[str, str]] = []
+    for a in cite.find_all("a", href=True):
+        href = (a.get("href") or "").strip()
+        if href.startswith("#"):
+            href = href[1:]
+        if not href:
+            continue
+        label = (a.get_text(strip=True) or "").strip()
+        refs.append({"ref_id": href, "label": label or href})
+    return refs
+
+
 def _paragraph_segments(p: Tag) -> list[str | dict[str, Any]]:
-    """Ordered text runs and {math, display?} dicts (no duplicate TeX + Unicode)."""
+    """Ordered text runs, math, citations, and nested tables (ar5iv / LaTeXML)."""
     parts: list[str | dict[str, Any]] = []
     buf: list[str] = []
 
@@ -156,6 +170,18 @@ def _paragraph_segments(p: Tag) -> list[str | dict[str, Any]]:
             if tex:
                 parts.append({"math": tex, "display": _is_display_math(node)})
             return
+        if node.name == "cite":
+            flush_buf()
+            refs = _extract_cite_refs(node)
+            if refs:
+                parts.append({"cite": refs})
+            return
+        if node.name == "table":
+            flush_buf()
+            rows = _table_rows(node)
+            if rows:
+                parts.append({"table": {"rows": rows}})
+            return
         for ch in node.children:
             walk(ch)
 
@@ -173,23 +199,33 @@ def _paragraph_segments(p: Tag) -> list[str | dict[str, Any]]:
     return merged
 
 
+def _segment_is_structured(x: Any) -> bool:
+    return isinstance(x, dict)
+
+
 def _paragraph_dict_from_ltx_p(p: Tag, section_id: str) -> dict[str, Any] | None:
     segs = _paragraph_segments(p)
     if not segs:
         return None
-    has_math = any(isinstance(x, dict) for x in segs)
+    has_structured = any(_segment_is_structured(x) for x in segs)
     text_only = [x for x in segs if isinstance(x, str)]
     content = " ".join(text_only).strip()
-    if has_math:
+    content = re.sub(r"\s+\.", ".", content)
+    content = re.sub(r"\s+,", ",", content)
+    if has_structured:
         items: list[Any] = []
         for x in segs:
             if isinstance(x, str):
                 items.append(x)
-            else:
+            elif "math" in x:
                 d: dict[str, Any] = {"math": x["math"]}
                 if x.get("display"):
                     d["display"] = True
                 items.append(d)
+            elif "cite" in x:
+                items.append({"cite": x["cite"]})
+            elif "table" in x:
+                items.append({"table": x["table"]})
         return {
             "section_id": section_id,
             "type": "paragraph",
@@ -203,10 +239,22 @@ def _paragraph_dict_from_ltx_p(p: Tag, section_id: str) -> dict[str, Any] | None
     }
 
 
+def _owning_table(tag: Tag) -> Tag | None:
+    el: Any = tag.parent
+    while el is not None:
+        if isinstance(el, Tag) and el.name == "table":
+            return el
+        el = el.parent
+    return None
+
+
 def _table_rows(table: Tag) -> list[list[str]]:
+    """Rows of this table only (ignore nested <table> rows)."""
     rows: list[list[str]] = []
     for tr in table.find_all("tr"):
-        cells = tr.find_all(["th", "td"])
+        if _owning_table(tr) is not table:
+            continue
+        cells = tr.find_all(["th", "td"], recursive=False)
         if not cells:
             continue
         rows.append([(c.get_text(" ", strip=True) or "").strip() for c in cells])
@@ -225,6 +273,34 @@ def _list_items(tag: Tag) -> list[str]:
             if t:
                 out.append(t)
     return out
+
+
+def _extract_references(article: Tag) -> list[dict[str, Any]]:
+    """LaTeXML bibliography: <li id=\"bib.bibN\" class=\"ltx_bibitem\">."""
+    refs: list[dict[str, Any]] = []
+    for li in article.find_all("li", class_=lambda c: c and "ltx_bibitem" in c):
+        rid = (li.get("id") or "").strip()
+        if not rid:
+            continue
+        label_el = li.find("span", class_=lambda c: c and "ltx_tag_bibitem" in c)
+        label = (label_el.get_text(strip=True) if label_el else "").strip()
+        blocks: list[str] = []
+        for blk in li.find_all("span", class_=lambda c: c and "ltx_bibblock" in c):
+            t = blk.get_text(" ", strip=True)
+            if t:
+                blocks.append(t)
+        text = " ".join(blocks).strip()
+        if not text:
+            text = (li.get_text(" ", strip=True) or "").strip()
+            if label and text.startswith(label):
+                text = text[len(label) :].strip()
+        entry: dict[str, Any] = {"ref_id": rid, "text": text}
+        if label:
+            entry["label"] = label
+        if blocks:
+            entry["blocks"] = blocks
+        refs.append(entry)
+    return refs
 
 
 def parse_ar5iv_html(html: str, base_url: str) -> dict[str, Any]:
@@ -347,6 +423,8 @@ def parse_ar5iv_html(html: str, base_url: str) -> dict[str, Any]:
         elif ch.name == "div" and "ltx_para" in (ch.get("class") or []):
             emit_para_block(ch)
 
+    references = _extract_references(article)
+
     return {
         "meta": {
             "title": title,
@@ -356,7 +434,8 @@ def parse_ar5iv_html(html: str, base_url: str) -> dict[str, Any]:
             "tags": [],
         },
         "sections": sections_out,
-        "parser_version": "raw_paper_parse.arxiv_html 0.2.0",
+        "references": references,
+        "parser_version": "raw_paper_parse.arxiv_html 0.4.0",
     }
 
 

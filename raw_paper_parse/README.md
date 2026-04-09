@@ -42,6 +42,14 @@ Each successful run prints one line to **stdout**, for example:
 
 The RawDoc `metadata` in `data/rawdocs/<rawdoc_id>.meta.json` also includes **`doc_id`** after ingest.
 
+## Citations & tables (arXiv HTML)
+
+- LaTeXML `\citep` / `<cite class="ltx_cite">` becomes ordered `items` entries `{"cite": [{"ref_id": "bib.bib35", "label": "35"}, ...]}`. **`ref_id`** is the HTML anchor target (without `#`), e.g. `bib.bib35`. Markdown export **drops** these blocks so the `.md` has no `[35, 2, 5]`-style citation markers; the JSON keeps the mapping for tooling.
+- The Document JSON includes a top-level **`references`** array: each entry has **`ref_id`**, **`text`** (full bibliography line as plain text), optional **`label`** (e.g. `[2]`), and optional **`blocks`** (LaTeXML `ltx_bibblock` segments). Match inline `cite` entries to **`references[].ref_id`**.
+- `<table>` nodes become either a **table** section (sibling of paragraphs in `ltx_para`) or an inline `{"table": {"rows": [[cell,…],…]}}` inside a paragraph’s `items` when the table sits inside `<p>`. Markdown uses **GFM pipe tables** for `rows`.
+
+When two citation groups sit next to each other with little text between them, Markdown can read slightly oddly (e.g. “such as and”); the structured `cite` entries in JSON remain complete.
+
 ## Phase 2 (not implemented)
 
 Planned extensions (see [PLAN.md](PLAN.md)):

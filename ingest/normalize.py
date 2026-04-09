@@ -48,7 +48,7 @@ def normalize(
             # Remove internal key before final doc if desired; assets stage will replace
         sections.append(sec)
 
-    return {
+    out: dict[str, Any] = {
         "doc_id": doc_id,
         "meta": {
             "title": (meta.get("title") or "").strip() or "Untitled",
@@ -68,3 +68,7 @@ def normalize(
         },
         "sections": sections,
     }
+    refs = parser_output.get("references")
+    if isinstance(refs, list):
+        out["references"] = refs
+    return out

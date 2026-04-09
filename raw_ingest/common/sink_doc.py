@@ -13,6 +13,29 @@ def _list_item_math_to_md(item: dict[str, Any]) -> str:
     return f"${tex}$"
 
 
+def _md_escape_table_cell(s: str) -> str:
+    return (s or "").replace("|", "\\|").replace("\n", " ").strip()
+
+
+def _rows_to_md_table(rows: list[Any]) -> str:
+    """GitHub-flavored Markdown pipe table."""
+    if not rows:
+        return ""
+    lines_out: list[str] = []
+    for i, row in enumerate(rows):
+        if not isinstance(row, list):
+            continue
+        cells = [_md_escape_table_cell(str(c)) for c in row]
+        if not cells:
+            continue
+        lines_out.append("| " + " | ".join(cells) + " |")
+        if i == 0:
+            lines_out.append("| " + " | ".join(["---"] * len(cells)) + " |")
+    if not lines_out:
+        return ""
+    return "\n" + "\n".join(lines_out) + "\n"
+
+
 def _paragraph_items_to_markdown(items: list[Any]) -> str:
     chunks: list[str] = []
     for it in items:
@@ -20,18 +43,37 @@ def _paragraph_items_to_markdown(items: list[Any]) -> str:
             chunks.append(it)
         elif isinstance(it, dict) and it.get("math") is not None:
             chunks.append(_list_item_math_to_md(it))
+        elif isinstance(it, dict) and it.get("cite") is not None:
+            continue
+        elif isinstance(it, dict) and it.get("table") is not None:
+            trows = (it.get("table") or {}).get("rows")
+            if trows:
+                chunks.append(_rows_to_md_table(trows))
         elif isinstance(it, dict) and (it.get("text") is not None):
             chunks.append(it.get("text") or "")
+    def _needs_space_between(prev: str, nxt: str) -> bool:
+        if not prev or not nxt:
+            return False
+        pl = prev[-1]
+        nf = nxt.lstrip()[:1]
+        if not nf:
+            return False
+        if pl.isalnum() and nf.isalnum():
+            return True
+        if pl in ".!?:" and nf.isalnum():
+            return True
+        if pl.isalnum() and nxt.lstrip().startswith("$"):
+            return True
+        if prev.rstrip().endswith("$") and nf.isalnum():
+            return True
+        return False
+
     out: list[str] = []
     for c in chunks:
         if not c:
             continue
-        if out:
-            prev = out[-1]
-            if prev[-1].isalnum() and c.lstrip().startswith("$"):
-                out.append(" ")
-            elif prev.rstrip().endswith("$") and c[:1].isalnum():
-                out.append(" ")
+        if out and _needs_space_between(out[-1], c):
+            out.append(" ")
         out.append(c)
     return "".join(out).strip()
 
@@ -44,7 +86,13 @@ def document_to_markdown(doc: dict[str, Any]) -> str:
 
     def append_list_items(items: list, indent: str = "") -> None:
         for item in items:
-            if isinstance(item, dict) and item.get("math") is not None:
+            if isinstance(item, dict) and item.get("cite") is not None:
+                continue
+            elif isinstance(item, dict) and item.get("table") is not None:
+                trows = (item.get("table") or {}).get("rows")
+                if trows:
+                    lines.append(_rows_to_md_table(trows))
+            elif isinstance(item, dict) and item.get("math") is not None:
                 body = _list_item_math_to_md(item).replace("\n", " ").strip()
                 lines.append(indent + "- " + body + "\n")
             elif isinstance(item, dict):
@@ -68,6 +116,8 @@ def document_to_markdown(doc: dict[str, Any]) -> str:
                 lines.append(s["content"] + "\n")
         elif s["type"] == "list" and s.get("items"):
             append_list_items(s["items"])
+        elif s["type"] == "table" and s.get("rows"):
+            lines.append(_rows_to_md_table(s["rows"]) + "\n")
         elif s["type"] == "code" and s.get("content"):
             lines.append("```\n" + s["content"] + "\n```\n")
         elif s["type"] == "figure" and s.get("assets"):

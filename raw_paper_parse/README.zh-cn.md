@@ -42,6 +42,14 @@ python sources/router.py --url 'https://arxiv.org/abs/2401.00001v1' \
 
 `data/rawdocs/<rawdoc_id>.meta.json` 里的 `metadata` 在写入时也会带上 **`doc_id`**，便于和 Document 对齐。
 
+## 引用与表格（arXiv HTML）
+
+- LaTeXML 的 `\citep` / `<cite class="ltx_cite">` 会变为 `items` 里的 `{"cite": [{"ref_id": "bib.bib35", "label": "35"}, ...]}`。**`ref_id`** 对应 HTML 锚点（去掉 `#`），例如 `bib.bib35`。导出 **Markdown 时会省略** 这些块，因此 `.md` 里不会出现 `[35, 2, 5]` 这类角标；**JSON 保留** 与参考文献条目的对应关系，供下游使用。
+- Document JSON **顶层**有 **`references`** 数组：每项含 **`ref_id`**、**`text`**（整条参考文献的纯文本）、可选 **`label`**（如 `[2]`）、可选 **`blocks`**（LaTeXML 的 `ltx_bibblock` 分段）。正文里 `cite` 的 `ref_id` 与 **`references[].ref_id`** 一致即可对齐全文。
+- `<table>` 若在 `ltx_para` 里与段落并列，会落成 **table** 小节；若在 `<p>` 内，则作为段落 `items` 里的 `{"table": {"rows": [[单元格,…],…]}}`。Markdown 里对 `rows` 使用 **GFM 管道表格**。
+
+若两个引用组紧挨（例如 “such as [a] and [b]”），去掉角标后 Markdown 可能略拗口；**JSON 里的 `cite` 结构仍是完整、可解析的**。
+
 ## 第二阶段（未实现）
 
 规划方向（详见 [PLAN.zh-cn.md](PLAN.zh-cn.md)）：
