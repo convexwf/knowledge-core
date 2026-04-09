@@ -6,6 +6,36 @@ from pathlib import Path
 from typing import Any
 
 
+def _list_item_math_to_md(item: dict[str, Any]) -> str:
+    tex = (item.get("math") or "").strip()
+    if item.get("display"):
+        return f"$$\n{tex}\n$$"
+    return f"${tex}$"
+
+
+def _paragraph_items_to_markdown(items: list[Any]) -> str:
+    chunks: list[str] = []
+    for it in items:
+        if isinstance(it, str):
+            chunks.append(it)
+        elif isinstance(it, dict) and it.get("math") is not None:
+            chunks.append(_list_item_math_to_md(it))
+        elif isinstance(it, dict) and (it.get("text") is not None):
+            chunks.append(it.get("text") or "")
+    out: list[str] = []
+    for c in chunks:
+        if not c:
+            continue
+        if out:
+            prev = out[-1]
+            if prev[-1].isalnum() and c.lstrip().startswith("$"):
+                out.append(" ")
+            elif prev.rstrip().endswith("$") and c[:1].isalnum():
+                out.append(" ")
+        out.append(c)
+    return "".join(out).strip()
+
+
 def document_to_markdown(doc: dict[str, Any]) -> str:
     lines = [
         f"# {doc['meta']['title']}\n",
@@ -14,7 +44,10 @@ def document_to_markdown(doc: dict[str, Any]) -> str:
 
     def append_list_items(items: list, indent: str = "") -> None:
         for item in items:
-            if isinstance(item, dict):
+            if isinstance(item, dict) and item.get("math") is not None:
+                body = _list_item_math_to_md(item).replace("\n", " ").strip()
+                lines.append(indent + "- " + body + "\n")
+            elif isinstance(item, dict):
                 text = (item.get("text") or "").replace("\n", " ").strip()
                 lines.append(indent + "- " + text + "\n")
                 if item.get("items"):
@@ -25,8 +58,14 @@ def document_to_markdown(doc: dict[str, Any]) -> str:
     for s in doc["sections"]:
         if s["type"] == "heading":
             lines.append(f"\n{'#' * s.get('level', 1)} {s.get('content', '')}\n")
-        elif s["type"] == "paragraph" and s.get("content"):
-            lines.append(s["content"] + "\n")
+        elif s["type"] == "paragraph":
+            items = s.get("items") or []
+            if items:
+                body = _paragraph_items_to_markdown(items)
+                if body:
+                    lines.append(body + "\n")
+            elif s.get("content"):
+                lines.append(s["content"] + "\n")
         elif s["type"] == "list" and s.get("items"):
             append_list_items(s["items"])
         elif s["type"] == "code" and s.get("content"):

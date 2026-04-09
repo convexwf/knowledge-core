@@ -1,0 +1,2 @@
+# hostname<TAB>module_name (no .py) under sources/
+arxiv.org	arxiv_html

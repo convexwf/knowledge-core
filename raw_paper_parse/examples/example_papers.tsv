@@ -1,0 +1,4 @@
+# work_id	variant	fetch_url	canonical_url (optional; if omitted, canonical = fetch_url)
+arxiv:2401.00001v1	preprint	https://arxiv.org/html/2401.00001v1	https://arxiv.org/abs/2401.00001v1
+# URL-only lines (no tabs) are also accepted: work_id=arxiv:<id>, variant=preprint, canonical=abs URL
+# https://arxiv.org/html/2401.00001v1

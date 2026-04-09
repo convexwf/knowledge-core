@@ -176,6 +176,22 @@
             }
           },
           "additionalProperties": false
+        },
+        {
+          "type": "object",
+          "description": "LaTeX math segment (from ar5iv / LaTeXML)",
+          "properties": {
+            "math": {
+              "type": "string"
+            },
+            "display": {
+              "type": "boolean"
+            }
+          },
+          "required": [
+            "math"
+          ],
+          "additionalProperties": false
         }
       ]
     }

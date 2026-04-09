@@ -2,7 +2,8 @@
 .PHONY: build build-py fetch ingest run docker-build docker-up clean \
 	raw-ingest-deps raw-ingest raw-ingest-batch raw-ingest-list \
 	raw-ingest-freedium-deps raw-ingest-freedium raw-ingest-freedium-batch \
-	raw-ingest-meituan-tech-deps raw-ingest-meituan-tech raw-ingest-meituan-tech-batch
+	raw-ingest-meituan-tech-deps raw-ingest-meituan-tech raw-ingest-meituan-tech-batch \
+	paper-parse-deps paper-parse paper-parse-batch
 
 REPO_ROOT := $(CURDIR)
 DATA_RAWDOCS := $(REPO_ROOT)/data/rawdocs
@@ -102,6 +103,22 @@ raw-ingest-freedium: raw-ingest-freedium-deps
 raw-ingest-freedium-batch: raw-ingest-freedium-deps
 	@test -n "$(FILE)" || (echo "Usage: make raw-ingest-freedium-batch FILE=path/to/urls.txt"; exit 1)
 	@cd "$(RAW_INGEST_DIR)" && python sites/medium_freedium.py --urls-file "$(abspath $(FILE))"
+
+# Paper ingest: arXiv HTML -> RawDoc + Document (see raw_paper_parse/README.md)
+PAPER_PARSE_DIR := $(REPO_ROOT)/raw_paper_parse
+
+paper-parse-deps:
+	@cd "$(PAPER_PARSE_DIR)" && pip install -q -r requirements.txt
+
+# Single URL: make paper-parse URL='https://arxiv.org/html/...'
+paper-parse: paper-parse-deps
+	@test -n "$(URL)" || (echo "Usage: make paper-parse URL='https://arxiv.org/html/...'"; exit 1)
+	@cd "$(PAPER_PARSE_DIR)" && python sources/router.py --url "$(URL)" $(if $(CANONICAL),--canonical-url "$(CANONICAL)") $(if $(WORK_ID),--work-id "$(WORK_ID)") $(if $(VARIANT),--variant "$(VARIANT)")
+
+# Batch: tab-separated work_id, variant, fetch_url, [canonical]; see raw_paper_parse/examples/example_papers.tsv
+paper-parse-batch: paper-parse-deps
+	@test -n "$(FILE)" || (echo "Usage: make paper-parse-batch FILE=path/to/batch.tsv"; exit 1)
+	@cd "$(PAPER_PARSE_DIR)" && python sources/router.py --urls-file "$(abspath $(FILE))"
 
 # Meituan tech blog (tech.meituan.com)
 raw-ingest-meituan-tech-deps:
