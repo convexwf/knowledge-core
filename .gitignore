@@ -39,3 +39,5 @@ htmlcov/
 # cursor
 .cursor/
 .cursorindexingignore
+
+**/tmp/

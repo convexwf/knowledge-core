@@ -1,0 +1,3 @@
+# raw_epub_parse source registry
+# pattern\tmodule
+*.epub	epub_file

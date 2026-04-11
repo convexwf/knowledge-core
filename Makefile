@@ -3,7 +3,8 @@
 	raw-ingest-deps raw-ingest raw-ingest-batch raw-ingest-list \
 	raw-ingest-freedium-deps raw-ingest-freedium raw-ingest-freedium-batch \
 	raw-ingest-meituan-tech-deps raw-ingest-meituan-tech raw-ingest-meituan-tech-batch \
-	paper-parse-deps paper-parse paper-parse-batch
+	paper-parse-deps paper-parse paper-parse-batch \
+	epub-parse-deps epub-parse epub-parse-batch epub-parse-test
 
 REPO_ROOT := $(CURDIR)
 DATA_RAWDOCS := $(REPO_ROOT)/data/rawdocs
@@ -133,3 +134,37 @@ raw-ingest-meituan-tech: raw-ingest-meituan-tech-deps
 raw-ingest-meituan-tech-batch: raw-ingest-meituan-tech-deps
 	@test -n "$(FILE)" || (echo "Usage: make raw-ingest-meituan-tech-batch FILE=path/to/urls.txt"; exit 1)
 	@cd "$(RAW_INGEST_DIR)" && python sites/meituan_tech.py --urls-file "$(abspath $(FILE))"
+
+# EPUB parse: Calibre directory -> Document (see raw_epub_parse/IMPLEMENTATION.md)
+EPUB_PARSE_DIR := $(REPO_ROOT)/raw_epub_parse
+
+epub-parse-deps:
+	@cd "$(EPUB_PARSE_DIR)" && pip install -q -r requirements.txt
+
+# Calibre directory mode: make epub-parse DIR="tmp/苏菲的世界 (371)"
+# Single .epub mode: make epub-parse FILE="/path/to/book.epub"
+epub-parse: epub-parse-deps
+	@if [ -n "$(DIR)" ]; then \
+		cd "$(EPUB_PARSE_DIR)" && python sources/router.py \
+			--dir "$(DIR)" \
+			$(if $(WORK_ID),--work-id "$(WORK_ID)") \
+			$(if $(VARIANT),--variant "$(VARIANT)"); \
+	elif [ -n "$(FILE)" ]; then \
+		cd "$(EPUB_PARSE_DIR)" && python sources/router.py \
+			--file "$(abspath $(FILE))" \
+			$(if $(WORK_ID),--work-id "$(WORK_ID)") \
+			$(if $(VARIANT),--variant "$(VARIANT)"); \
+	else \
+		echo "Usage: make epub-parse DIR='path/to/Calibre Dir (id)' or make epub-parse FILE='path/to/book.epub'"; exit 1; fi
+
+# Batch mode: tab-separated work_id, variant, path, [canonical]
+epub-parse-batch: epub-parse-deps
+	@test -n "$(FILE)" || (echo "Usage: make epub-parse-batch FILE=path/to/batch.tsv"; exit 1)
+	@cd "$(EPUB_PARSE_DIR)" && python sources/router.py --urls-file "$(abspath $(FILE))"
+
+# Quick test with sample Calibre directory
+epub-parse-test: epub-parse-deps
+	@cd "$(EPUB_PARSE_DIR)" && python sources/router.py \
+		--dir "$(REPO_ROOT)/tmp/苏菲的世界 (371)" \
+		--work-id "sophies-world" \
+		--variant "book"
