@@ -31,6 +31,11 @@ from common.paths import REPO_ROOT
 from common.sink import write_document_outputs
 from common.validate import validate_document
 
+try:
+    from sources import rules as rules_module
+except ImportError:
+    import rules as rules_module
+
 CalibreDir = namedtuple("CalibreDir", [
     "dir_path",
     "epub_path",
@@ -192,7 +197,7 @@ def parse_calibre_metadata(opf_path: Path) -> CalibreMeta:
     word_count = None
     for meta_el in metadata.findall(f"{{{OPF_NS}}}meta"):
         name = meta_el.get("name", "")
-        content = (meta_el.text or "").strip()
+        content = (meta_el.get("content") or meta_el.text or "").strip()
         if name == "calibre:user_metadata:#pages":
             try:
                 data = json.loads(content)
@@ -409,9 +414,17 @@ def parse_chapter_body(
     next_id: Callable[[str], str],
     item_href: str,
     skip_first_h1: bool = False,
+    rules: dict[str, Any] | None = None,
 ) -> list[dict[str, Any]]:
     sections: list[dict[str, Any]] = []
     _skipped_first_h1 = False
+
+    heading_class_map: dict[str, dict] = (rules or {}).get("heading_class_map") or {}
+    bold_span = (rules or {}).get("heading_bold_span") or {}
+    bold_span_enabled = bold_span.get("enabled") if isinstance(bold_span, dict) else False
+    bold_span_level = bold_span.get("level", 3) if isinstance(bold_span, dict) else 3
+    bold_span_max = bold_span.get("max_length", 120) if isinstance(bold_span, dict) else 120
+    ignore_classes = set((rules or {}).get("ignore_paragraph_classes") or [])
 
     def walk(node):
         nonlocal _skipped_first_h1
@@ -436,14 +449,26 @@ def parse_chapter_body(
                     "content": text,
                 })
 
+        elif tag_name in ("p", "div") and heading_class_map:
+            classes = (node.get("class") or [])
+            matched = False
+            for cls, cfg in heading_class_map.items():
+                if cls in classes:
+                    text = node.get_text(" ", strip=True)
+                    if text:
+                        sections.append({
+                            "section_id": next_id("h"),
+                            "type": "heading",
+                            "level": cfg.get("level", 2) if isinstance(cfg, dict) else 3,
+                            "content": text,
+                        })
+                    matched = True
+                    break
+            if not matched:
+                _maybe_paragraph(node)
+
         elif tag_name == "p":
-            text = node.get_text(" ", strip=True)
-            if text:
-                sections.append({
-                    "section_id": next_id("p"),
-                    "type": "paragraph",
-                    "content": text,
-                })
+            _maybe_paragraph(node)
 
         elif tag_name == "img":
             src = (node.get("src") or "").strip()
@@ -490,6 +515,33 @@ def parse_chapter_body(
             for child in node.children:
                 walk(child)
 
+    def _maybe_paragraph(node):
+        classes = (node.get("class") or [])
+        if ignore_classes and any(c in ignore_classes for c in classes):
+            return
+
+        if bold_span_enabled:
+            spans = node.find_all("span", class_="bold")
+            if spans:
+                p_text = node.get_text(" ", strip=True)
+                span_text = " ".join(s.get_text(" ", strip=True) for s in spans).strip()
+                if p_text and span_text and len(p_text) <= bold_span_max:
+                    sections.append({
+                        "section_id": next_id("h"),
+                        "type": "heading",
+                        "level": bold_span_level,
+                        "content": span_text,
+                    })
+                    return
+
+        text = node.get_text(" ", strip=True)
+        if text:
+            sections.append({
+                "section_id": next_id("p"),
+                "type": "paragraph",
+                "content": text,
+            })
+
     for child in body.children:
         walk(child)
 
@@ -500,6 +552,7 @@ def parse_chapters(
     zf: zipfile.ZipFile,
     meta: EpubMeta,
     filter_skippable: bool = True,
+    rules: dict[str, Any] | None = None,
 ) -> dict[str, Any]:
     all_sections: list[dict[str, Any]] = []
     sid = 0
@@ -540,6 +593,7 @@ def parse_chapters(
         chapter_sections = parse_chapter_body(
             body, next_id, item.href,
             skip_first_h1=(chapter_title is not None),
+            rules=rules,
         )
         all_sections.extend(chapter_sections)
 
@@ -552,6 +606,18 @@ def parse_chapters(
 
 def merge_metadata(calibre: CalibreMeta | None, epub: EpubMeta, calibre_dir: CalibreDir) -> dict:
     c = calibre
+    tags = []
+    if c:
+        for s in c.subjects:
+            tags.append(f"calibre:subject:{s}")
+        if c.publisher:
+            tags.append(f"calibre:publisher:{c.publisher}")
+        if c.language:
+            tags.append(f"calibre:language:{_normalize_lang(c.language)}")
+        if c.pages is not None:
+            tags.append(f"calibre:pages:{c.pages}")
+        if c.word_count is not None:
+            tags.append(f"calibre:words:{c.word_count}")
     return {
         "title": (c.title if c else None) or epub.title or calibre_dir.dir_path.name or "Untitled",
         "authors": _pick_nonempty(c.creators if c else None, epub.creators),
@@ -559,7 +625,7 @@ def merge_metadata(calibre: CalibreMeta | None, epub: EpubMeta, calibre_dir: Cal
         "published_at": _pick_nonempty_string(
             (c.date if c else None), epub.date,
         ),
-        "tags": c.subjects if c else [],
+        "tags": tags,
     }
 
 
@@ -661,6 +727,15 @@ def open_calibre_dir(dir_path: str | Path) -> tuple[CalibreDir, CalibreMeta | No
     return cd, calibre_meta, epub_meta, zf
 
 
+def _open_epub_file(epub_path: Path) -> tuple[EpubMeta, zipfile.ZipFile, bytes]:
+    """打开单个 .epub 文件（非 Calibre 目录模式）"""
+    epub_bytes = epub_path.read_bytes()
+    zf = zipfile.ZipFile(io.BytesIO(epub_bytes))
+    opf_path = _parse_container_xml(zf)
+    epub_meta = parse_epub_opf(zf, opf_path)
+    return epub_meta, zf, epub_bytes
+
+
 def run_one(
     dir_path: str,
     canonical_url: str,
@@ -673,13 +748,41 @@ def run_one(
     work_id: str = "",
     variant: str = "book",
     write_rawdoc: bool = False,
+    user_tags: str = "",
 ) -> None:
-    calibre_dir, calibre_meta, epub_meta, zf = open_calibre_dir(dir_path)
-    source_uri = canonical_url or f"file://{calibre_dir.dir_path.resolve()}"
+    input_path = Path(dir_path)
 
-    merged_meta = merge_metadata(calibre_meta, epub_meta, calibre_dir)
+    if input_path.is_dir():
+        # Calibre 目录模式
+        calibre_dir, calibre_meta, epub_meta, zf = open_calibre_dir(dir_path)
+        source_uri = canonical_url or f"file://{calibre_dir.dir_path.resolve()}"
+        merged_meta = merge_metadata(calibre_meta, epub_meta, calibre_dir)
+        cover_path = calibre_dir.cover_path
+    elif input_path.suffix.lower() == ".epub" and input_path.is_file():
+        # 单文件模式
+        epub_meta, zf, epub_bytes = _open_epub_file(input_path)
+        source_uri = canonical_url or f"file://{input_path.resolve()}"
+        calibre_meta = None
+        calibre_dir = CalibreDir(
+            dir_path=input_path.parent,
+            epub_path=input_path,
+            cover_path=None,
+            metadata_opf_path=None,
+        )
+        merged_meta = {
+            "title": epub_meta.title or input_path.stem,
+            "authors": epub_meta.creators,
+            "language": _normalize_lang(epub_meta.language),
+            "published_at": epub_meta.date or None,
+            "tags": [],
+        }
+        cover_path = None
+    else:
+        raise FileNotFoundError(f"Not a .epub file or Calibre directory: {dir_path}")
 
-    parser_output = parse_chapters(zf, epub_meta)
+    parse_rules = rules_module.load_rules(user_tags)
+
+    parser_output = parse_chapters(zf, epub_meta, rules=parse_rules)
 
     parser_output["meta"]["title"] = (
         parser_output["meta"].get("title")
@@ -711,6 +814,11 @@ def run_one(
             tags.append(f"book:isbn:{calibre_meta.isbn}")
         if calibre_meta.douban_id:
             tags.append(f"book:douban:{calibre_meta.douban_id}")
+    if user_tags:
+        for t in user_tags.split(","):
+            t = t.strip()
+            if t:
+                tags.append(f"user:tag:{t}")
     parser_output["meta"]["tags"] = tags
 
     rawdoc_id = str(uuid.uuid4())

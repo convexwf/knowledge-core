@@ -87,6 +87,7 @@ def main() -> None:
     ap.add_argument("--canonical-url", default="", help="source_uri override")
     ap.add_argument("--work-id", default="", help="Logical work id")
     ap.add_argument("--variant", default="book", help="book|article|...")
+    ap.add_argument("--tags", default="", help="Comma-separated user tags")
     ap.add_argument("--urls-file", default="", help="Batch: one path per line (tab-separated)")
     ap.add_argument("--rawdocs", default=None, help="RawDocs dir")
     ap.add_argument("--assets", default=None, help="Assets dir")
@@ -180,6 +181,7 @@ def main() -> None:
                 do_validate,
                 work_id=work_id,
                 variant=variant,
+                user_tags=args.tags,
             )
         except Exception as e:
             import traceback

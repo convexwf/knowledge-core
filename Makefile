@@ -145,26 +145,32 @@ epub-parse-deps:
 # Single .epub mode: make epub-parse FILE="/path/to/book.epub"
 epub-parse: epub-parse-deps
 	@if [ -n "$(DIR)" ]; then \
+		dir_path=$$(realpath '$(DIR)' 2>/dev/null || echo '$(DIR)'); \
 		cd "$(EPUB_PARSE_DIR)" && python sources/router.py \
-			--dir "$(DIR)" \
+			--dir "$$dir_path" \
 			$(if $(WORK_ID),--work-id "$(WORK_ID)") \
-			$(if $(VARIANT),--variant "$(VARIANT)"); \
+			$(if $(VARIANT),--variant "$(VARIANT)") \
+			$(if $(TAGS),--tags "$(TAGS)"); \
 	elif [ -n "$(FILE)" ]; then \
+		file_path=$$(realpath '$(FILE)' 2>/dev/null || echo '$(FILE)'); \
 		cd "$(EPUB_PARSE_DIR)" && python sources/router.py \
-			--file "$(abspath $(FILE))" \
+			--file "$$file_path" \
 			$(if $(WORK_ID),--work-id "$(WORK_ID)") \
-			$(if $(VARIANT),--variant "$(VARIANT)"); \
+			$(if $(VARIANT),--variant "$(VARIANT)") \
+			$(if $(TAGS),--tags "$(TAGS)"); \
 	else \
 		echo "Usage: make epub-parse DIR='path/to/Calibre Dir (id)' or make epub-parse FILE='path/to/book.epub'"; exit 1; fi
 
 # Batch mode: tab-separated work_id, variant, path, [canonical]
 epub-parse-batch: epub-parse-deps
 	@test -n "$(FILE)" || (echo "Usage: make epub-parse-batch FILE=path/to/batch.tsv"; exit 1)
-	@cd "$(EPUB_PARSE_DIR)" && python sources/router.py --urls-file "$(abspath $(FILE))"
+	@batch_path=$$(realpath '$(FILE)' 2>/dev/null || echo '$(FILE)'); \
+	cd "$(EPUB_PARSE_DIR)" && python sources/router.py --urls-file "$$batch_path"
 
 # Quick test with sample Calibre directory
 epub-parse-test: epub-parse-deps
 	@cd "$(EPUB_PARSE_DIR)" && python sources/router.py \
 		--dir "$(REPO_ROOT)/tmp/苏菲的世界 (371)" \
 		--work-id "sophies-world" \
-		--variant "book"
+		--variant "book" \
+		$(if $(TAGS),--tags "$(TAGS)")

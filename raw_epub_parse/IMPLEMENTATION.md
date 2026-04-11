@@ -9,7 +9,7 @@
 | 项目         | 内容                               |
 | ------------ | ---------------------------------- |
 | **文档标题** | raw_epub_parse 技术实现方案        |
-| **文档版本** | v2.0                               |
+| **文档版本** | v3.0                               |
 | **创建日期** | 2026-05-03                         |
 | **更新日期** | 2026-05-03                         |
 | **文档作者** | convexwf                           |
@@ -41,6 +41,7 @@
 - [8. Makefile 集成](#8-makefile-集成)
 - [9. 测试验证计划](#9-测试验证计划)
 - [10. 边界情况与错误处理](#10-边界情况与错误处理)
+- [11. 标签驱动规则系统](#11-标签驱动规则系统)
 
 ---
 
@@ -58,10 +59,13 @@ raw_epub_parse/
   │   ├── normalize.py       # parser_output → Document schema
   │   ├── sink.py            # Document → Markdown + 文件写入
   │   └── validate.py        # JSON Schema 校验
+  ├── rules/                 # 标签驱动解析规则（YAML）
+  │   └── the-economics.yaml # 示例：Economist EPUB 特殊规则
   └── sources/
         ├── __init__.py
         ├── router.py        # CLI 入口 + 分发器
         ├── epub_file.py     # 核心：Calibre 目录 → parser_output → Document
+        ├── rules.py         # 规则加载引擎
         └── supported_sources.txt
 ```
 
@@ -1849,6 +1853,199 @@ def _pick_nonempty_string(primary: str | None, fallback: str | None) -> str | No
 
 ---
 
+## 11. 标签驱动规则系统
+
+### 设计动机
+
+不同来源的 Calibre EPUB 使用**不同的 CSS class 约定**来表达标题层级。例如：
+
+- 《苏菲的世界》使用标准 `<h1>` 标签 → 无需规则
+- 《The Economist》使用 `<p class="calibre_4"><span class="bold">Politics</span></p>` → 需要规则将 `bold` span 识别为标题
+
+规则系统通过 **user_tags 标签匹配** 自动选择对应的解析规则文件，使得同一解析器能适应不同 EPUB 的标记风格。
+
+### 规则文件格式（YAML）
+
+```yaml
+# rules/the-economics.yaml
+# 触发条件：user_tags 包含 "the-economics"
+
+# 规则集名称
+name: "The Economist"
+
+# 标题 class → level 映射
+# 当 <p> / <div> 具有这些 class 时，视为对应级别的 heading
+heading_class_map:
+  calibre_2: {level: 1}      # 文章大标题 → H1
+  calibre_4: {level: 3}      # 节标题 → H3（仅当内容为纯 bold 短文本时）
+
+# 粗体 span 标题检测
+# 当 <p> 内容仅由 <span class="bold"> 包裹，且文本长度 < 阈值时，视为标题
+heading_bold_span:
+  enabled: true
+  level: 3                   # 视为 H3
+  max_length: 120             # 超过此长度的 bold 文本仍视为 paragraph
+
+# 跳过规则覆盖（可选）
+skip_rules:
+  # 跳过 index_split_000.html（仅含 TOC 链接）
+  link_density_threshold: 0.5
+
+# 段落 class 忽略（不输出为 paragraph 的装饰性元素）
+ignore_paragraph_classes:
+  - calibre_8               # 图片容器
+```
+
+### 规则加载流程
+
+```mermaid
+flowchart TD
+    A["make epub-parse ... TAGS='the-economics'"] --> B["router.py"]
+    B --> C["epub_file.run_one(user_tags='the-economics')"]
+    C --> D["rules.load_rules(user_tags)"]
+    D --> E{匹配到规则文件?}
+    E -->|Yes| F["加载 rules/the-economics.yaml"]
+    E -->|No| G["返回 default_rules (全空)"]
+    F --> H["parse_chapters(zf, meta, rules)"]
+    G --> H
+    H --> I["parse_chapter_body(body, ..., rules)"]
+    I --> J["walk 节点时应用 heading_class_map + heading_bold_span"]
+```
+
+### 模块规格：rules.py
+
+```python
+# sources/rules.py
+"""Tag-driven parse rule loader."""
+
+import yaml
+from pathlib import Path
+from typing import Any
+
+RULES_DIR = Path(__file__).resolve().parents[1] / "rules"
+
+def _default_rules() -> dict[str, Any]:
+    return {
+        "name": "default",
+        "heading_class_map": {},
+        "heading_bold_span": {"enabled": False, "level": 2, "max_length": 120},
+        "skip_rules": {"link_density_threshold": 0.5},
+        "ignore_paragraph_classes": [],
+    }
+
+def load_rules(user_tags: str) -> dict[str, Any]:
+    """根据 user_tags 加载匹配的规则文件。返回第一个匹配的规则 dict。"""
+    if not user_tags:
+        return _default_rules()
+    tags = [t.strip() for t in user_tags.split(",") if t.strip()]
+    for tag in tags:
+        rule_file = RULES_DIR / f"{tag}.yaml"
+        if rule_file.is_file():
+            with open(rule_file, "r", encoding="utf-8") as f:
+                data = yaml.safe_load(f)
+            if isinstance(data, dict):
+                return data
+    return _default_rules()
+```
+
+### parse_chapter_body 规则集成
+
+在 `walk()` 函数中，原始逻辑仅处理 `<h1>`-`<h6>` 标签。增加规则后：
+
+```python
+def parse_chapter_body(body, next_id, item_href,
+                       skip_first_h1=False,
+                       rules=None):
+    if rules is None:
+        rules = {}
+    
+    heading_class_map = rules.get("heading_class_map") or {}
+    bold_span = rules.get("heading_bold_span") or {}
+    ignore_classes = set(rules.get("ignore_paragraph_classes") or [])
+
+    def walk(node):
+        tag_name = node.name
+        classes = " ".join(node.get("class") or [])
+
+        # === 标准 heading 标签 ===
+        if tag_name in ("h1", "h2", "h3", "h4", "h5", "h6"):
+            # ... 原有逻辑 ...
+
+        # === heading_class_map 规则 ===
+        elif tag_name in ("p", "div") and classes:
+            for cls, cfg in heading_class_map.items():
+                if cls in classes:
+                    text = node.get_text(" ", strip=True)
+                    if text:
+                        sections.append({
+                            "type": "heading",
+                            "level": cfg.get("level", 2),
+                            "content": text,
+                            "section_id": next_id("h"),
+                        })
+                    return  # 不再递归子节点
+
+        # === heading_bold_span 规则 ===
+        elif tag_name == "p" and bold_span.get("enabled"):
+            # 检测：<p><span class="bold">Short Title</span></p>
+            spans = node.find_all("span", class_="bold")
+            if spans:
+                p_text = node.get_text(" ", strip=True)
+                # 如果整个 p 的文本等于 bold span 的文本 + 可忽略空白
+                span_text = " ".join(s.get_text(" ", strip=True) for s in spans).strip()
+                if len(p_text) <= bold_span.get("max_length", 120) and span_text:
+                    sections.append({
+                        "type": "heading",
+                        "level": bold_span.get("level", 3),
+                        "content": span_text,
+                        "section_id": next_id("h"),
+                    })
+                    return
+
+        # === ignore_paragraph_classes ===
+        elif tag_name == "p" and classes:
+            if any(c in ignore_classes for c in node.get("class") or []):
+                return  # 跳过装饰性段落
+
+        # ... 其余原有逻辑 ...
+```
+
+### 匹配优先级
+
+| 优先级 | 检测条件 | 说明 |
+|--------|----------|------|
+| 1 | `<h1>`-`<h6>` 标签 | 标准标题（无论规则如何） |
+| 2 | `heading_class_map` class 匹配 | 规则指定的 class → level 映射 |
+| 3 | `heading_bold_span` | 纯 bold span 短文本 → 标题 |
+| 4 | `ignore_paragraph_classes` | 跳过匹配的 class |
+| 5 | `<p>` 段落 / `<img>` 图片 / 默认 | 回退到标准解析 |
+
+### 示例规则（the-economics.yaml）
+
+```yaml
+name: "The Economist"
+heading_class_map: {}
+heading_bold_span:
+  enabled: true
+  level: 3
+  max_length: 120
+ignore_paragraph_classes: []
+skip_rules:
+  link_density_threshold: null
+```
+
+**效果**：Economist EPUB 中 `<p class="calibre_4"><span class="bold">Politics</span></p>` 被识别为 `### Politics`（H3 标题），而非普通段落。
+
+### 添加新规则的步骤
+
+1. 确定触发标签（如 `the-economics`）
+2. 检查 EPUB 内一章的 HTML 结构，找出标题的 class 模式
+3. 在 `rules/` 下创建 `{tag}.yaml`
+4. 配置 `heading_class_map` 或 `heading_bold_span`
+5. 运行 `make epub-parse ... TAGS='the-economics'` 验证
+
+---
+
 ## 附录 A：v1.0 → v2.0 变更清单
 
 | 变更项 | v1.0 | v2.0 | 原因 |
@@ -1861,3 +2058,13 @@ def _pick_nonempty_string(primary: str | None, fallback: str | None) -> str | No
 | 新增字段 | — | ISBN, Douban ID, pages, word_count, description | 从 Calibre metadata 提取 |
 | router 参数 | `--file` | `--dir`（Calibre 目录）+ `--file`（兼容） | 支持两种模式 |
 | Makefile target | `epub-parse FILE=...` | `epub-parse DIR=...` 或 `epub-parse FILE=...` | 目录模式为主 |
+
+## 附录 B：v2.0 → v3.0 变更清单
+
+| 变更项 | v2.0 | v3.0 | 原因 |
+|--------|------|------|------|
+| Tag 前缀 | 无前缀 subject | `calibre:subject:` 前缀 + 更多 calibre 字段 | 来源区分 |
+| 用户 Tag | 不支持 | `--tags` CLI + `user:tag:` 前缀 | 人工标注 |
+| 规则系统 | 无 | `rules/{tag}.yaml` 标签驱动规则 | 不同 EPUB 的 class 约定不同 |
+| 标题检测 | 仅 `<h1>`-`<h6>` | + `heading_class_map` + `heading_bold_span` | Calibre 生成的 EPUB 常用 class 而非标签 |
+| 依赖新增 | — | `PyYAML` | 规则文件解析 |

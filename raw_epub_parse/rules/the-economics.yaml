@@ -1,0 +1,21 @@
+# The Economist EPUB parse rules
+# 触发条件：make epub-parse ... TAGS='the-economics'
+name: "The Economist"
+
+# CSS class → 标题等级映射
+# 当 <p> / <div> 具有这些 class 时，识别为对应层级的 heading
+heading_class_map: {}
+
+# 粗体 span 标题检测
+# 当 <p> 内容仅由 <span class="bold"> 包裹的短文本组成时，识别为标题
+heading_bold_span:
+  enabled: true
+  level: 3                # 识别为 H3
+  max_length: 120          # 超过此长度的 bold 文本保持为 paragraph
+
+# 跳过规则
+skip_rules:
+  link_density_threshold: null
+
+# 忽略的段落 class（不输出为 paragraph 的装饰性元素）
+ignore_paragraph_classes: []
